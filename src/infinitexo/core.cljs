@@ -32,10 +32,10 @@
 
 
 (def active-users
-  [{:name "Player 1"
+  [{:name "Player X"
     :symbol "X"
     :total-wins 0}
-   {:name "Player 2"
+   {:name "Player O"
     :symbol "O"
     :total-wins 0}
    #_{:name "Player 3"
