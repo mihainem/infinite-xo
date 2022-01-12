@@ -42,41 +42,46 @@
       :symbol "I"
       :total-wins 0}])
 
+(defn new-game-click [e]
+  (swap! app-state assoc :board (new-board 10)))
+
 (defn display-winner [symbol]
   (let [winning-player (->> active-users
                             (filter #(= (:symbol %) symbol))
                             (first)
                             (:name))]
-    (when (not (nil? winning-player)) (println winning-player "has won"))))
+    (when (not (nil? winning-player)) (when (js/confirm (str winning-player " has won. Do you want to restart?"))
+                                        (new-game-click nil)))))
 
-(defn check-solution [i j]
-  (let [board (get-in @app-state [:board])
-        valids-nr 5
-        valid? (fn [arr] (let
-                          [groups (partition-by identity arr)
-                           filtered-groups (filter #(and (>= (count %) valids-nr)
-                                                         (not= (first %) "B")) groups)]
-                           (if (> (count filtered-groups) 0) (first (first filtered-groups)) nil)
-                           ))
-        horrizontal (vec (for [x (map #(+ (- i (dec valids-nr)) %) (range (dec (* 2 valids-nr))))
-                               :when (<= 0 x (dec (count board)))]
-                           (get-in board [j x])))
-        vertical (vec (for [x (map #(+ (- j (dec valids-nr)) %) (range (dec (* 2 valids-nr))))
-                            :when (<= 0 x (dec (count board)))]
-                        (get-in board [x i])))
-        left-diagonal (vec (for [x (map #(+ (- (dec valids-nr)) %) (range (dec (* 2 valids-nr))))
-                                 :when (and (<= 0 (+ x j) (dec (count board)))
-                                            (<= 0 (+ x i) (dec (count board))))]
-                             (get-in board [(+ j x) (+ i x)])))
-        right-diagonal (vec (for [x (map #(+ (- (dec valids-nr)) %) (range (dec (* 2 valids-nr))))
-                                  :when (and (<= 0 (- j x) (dec (count board)))
-                                             (<= 0 (+ i x) (dec (count board))))]
-                              (get-in board [(- j x) (+ i x)])))]
-    (->> [horrizontal vertical left-diagonal right-diagonal]
-         (map valid?)
-         (remove nil?)
-         (first)
-         (display-winner))))
+
+  (defn check-solution [i j]
+    (let [board (get-in @app-state [:board])
+          valids-nr 5
+          valid? (fn [arr] (let
+                            [groups (partition-by identity arr)
+                             filtered-groups (filter #(and (>= (count %) valids-nr)
+                                                           (not= (first %) "B")) groups)]
+                             (if (> (count filtered-groups) 0) (first (first filtered-groups)) nil)))
+          horrizontal (vec (for [x (map #(+ (- i (dec valids-nr)) %) (range (dec (* 2 valids-nr))))
+                                 :when (<= 0 x (dec (count board)))]
+                             (get-in board [j x])))
+          vertical (vec (for [x (map #(+ (- j (dec valids-nr)) %) (range (dec (* 2 valids-nr))))
+                              :when (<= 0 x (dec (count board)))]
+                          (get-in board [x i])))
+          left-diagonal (vec (for [x (map #(+ (- (dec valids-nr)) %) (range (dec (* 2 valids-nr))))
+                                   :when (and (<= 0 (+ x j) (dec (count board)))
+                                              (<= 0 (+ x i) (dec (count board))))]
+                               (get-in board [(+ j x) (+ i x)])))
+          right-diagonal (vec (for [x (map #(+ (- (dec valids-nr)) %) (range (dec (* 2 valids-nr))))
+                                    :when (and (<= 0 (- j x) (dec (count board)))
+                                               (<= 0 (+ i x) (dec (count board))))]
+                                (get-in board [(- j x) (+ i x)])))]
+      (->> [horrizontal vertical left-diagonal right-diagonal]
+           (map valid?)
+           (remove nil?)
+           (first)
+           (display-winner))))
+
 
 (defn blank [i j]
   [:rect {:width 0.95
@@ -118,6 +123,7 @@
 
 
 
+
 (defn infinitexo []
   [:center
    [:h1 (:text @app-state)]
@@ -134,7 +140,7 @@
           "X" [cross i j]
           "I" [line i j]
           "O" [circle i j]))])
-   [:p [:button {:on-click (fn new-game-click [e] (swap! app-state assoc :board (new-board 10)))} "New Game"]]])
+   [:p [:button {:on-click new-game-click} "New Game"]]])
 
 (rd/render [infinitexo]
            (. js/document (getElementById "app")))
