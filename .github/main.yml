@@ -25,6 +25,11 @@ jobs:
       - name: Build ClojureScript
         run: npx shadow-cljs release app
 
+      - name: Install leiningen
+        run: |
+          # Install Leiningen
+          sudo apt-get install -y leiningen
+
       - name: Build Production app
         run: |
           lein do clean, cljsbuild once min
