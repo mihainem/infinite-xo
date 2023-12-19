@@ -43,7 +43,7 @@
                ;; lein cljsbuild once min
                {:id "min"
                 :source-paths ["src"]
-                :compiler {:output-to "js/compiled/infinitexo.js"
+                :compiler {:output-to "resources/public/js/compiled/infinitexo.js"
                            :main infinitexo.core
                            :optimizations :advanced
                            :pretty-print false}}]}

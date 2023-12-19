@@ -14,3 +14,4 @@ pom.xml
 *.history
 *.clj-kondo
 *.lsp
+node_modules

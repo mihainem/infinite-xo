@@ -1,0 +1,46 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches:
+      - master # adjust this to your main branch name
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up JDK
+        uses: actions/setup-java@v2
+        with:
+          distribution: 'adopt'
+          java-version: '11'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build ClojureScript
+        run: npx shadow-cljs release app
+
+      - name: Build Production app
+        run: |
+          lein do clean, cljsbuild once min
+
+      - name: Deploy to GitHub Pages
+        run: |
+          rm -rf docs
+          mkdir docs
+          mv -v resources/public/* docs/
+        if: success()
+
+      - name: Commit and push changes
+        run: |
+          git config user.email "mihai@simion.dev"
+          git config user.name "Mihai S"
+          git add docs
+          git commit -m "Auto-build and deploy to GitHub Pages"
+          git subtree split --prefix docs -b gh-pages
+          git push -f origin gh-pages
