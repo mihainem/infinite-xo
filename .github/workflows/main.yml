@@ -22,9 +22,6 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Build ClojureScript
-        run: npx shadow-cljs release app
-
       - name: Install leiningen
         run: |
           # Install Leiningen
