@@ -1,0 +1,17 @@
+{
+    "manifest_version": 2,
+    "name": "Infinite XO",
+    "description": "Play XO",
+    "version": "1.0",
+    "icons": {
+        "128": "./ico.png"
+    },
+    "browser_action": {
+        "default_popup": "./index.html",
+        "default_icon": "./ico.png"
+    },
+    "permissions": [
+        "activeTab",
+        "http://localhost:3449/*"
+    ]
+}
