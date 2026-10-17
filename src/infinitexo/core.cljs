@@ -5,148 +5,171 @@
 
 (enable-console-print!)
 
-;;(println "This text is printed from src/infinitexo/core.cljs. Go ahead and edit it and see reloading in action.")
+;; ---------------------------------------------------------------------------
+;; Rules
 
-;; define your app data so that it doesn't get over-written on reload
+(def win-length 5)
 
-(defn new-board [size]
-  (vec (repeat size (vec (repeat size "B")))))
+;; The grid always shows at least this area, and keeps `margin` empty cells
+;; around the outermost marks, so playing near an edge grows the board.
+(def base-area {:min-x 0 :min-y 0 :max-x 9 :max-y 9})
+(def margin 2)
 
+(def players
+  {:x {:name "X" :next :o}
+   :o {:name "O" :next :x}})
 
-(def app-state (atom {:text "Infinite XO"
-                      :board (new-board 10)
-                      :current-player -1
-                      :current-state "B"}))
+(def directions [[1 0] [0 1] [1 1] [1 -1]])
 
-(defn computer-move []
-  (swap! app-state assoc-in [:board 0 0] "C"))
+(defn- run-from
+  "Cells owned by `player` going from `pos` (exclusive) in direction [dx dy]."
+  [cells [x y] player [dx dy]]
+  (->> (iterate (fn [[cx cy]] [(+ cx dx) (+ cy dy)]) [(+ x dx) (+ y dy)])
+       (take-while #(= player (get cells %)))))
 
-(defn change-state [app-atom]
-  (swap! app-atom update-in [:current-state] inc))
+(defn winning-line
+  "Returns the cells of a line of at least `win-length` through `pos`, or nil."
+  [cells pos]
+  (let [player (get cells pos)]
+    (some (fn [[dx dy]]
+            (let [line (concat (reverse (run-from cells pos player [(- dx) (- dy)]))
+                               [pos]
+                               (run-from cells pos player [dx dy]))]
+              (when (>= (count line) win-length)
+                (vec line))))
+          directions)))
 
-(def o [:svg
-        {:view-box "0 0 30 30"
-         :width 500
-         :height 500}
-        [:circle {:r 30 :cx 30 :cy 30}]])
+(defn bounds
+  "The visible area: the base area plus `margin` cells around every mark."
+  [cells]
+  (reduce (fn [b [x y]]
+            {:min-x (min (:min-x b) (- x margin))
+             :min-y (min (:min-y b) (- y margin))
+             :max-x (max (:max-x b) (+ x margin))
+             :max-y (max (:max-y b) (+ y margin))})
+          base-area
+          (keys cells)))
 
+;; ---------------------------------------------------------------------------
+;; State
 
-(def active-users
-  [{:name "Player X"
-    :symbol "X"
-    :total-wins 0}
-   {:name "Player O"
-    :symbol "O"
-    :total-wins 0}
-   #_{:name "Player 3"
-      :symbol "I"
-      :total-wins 0}])
+(defn new-round [starting-player]
+  {:cells {}
+   :turn starting-player
+   :starter starting-player
+   :winner nil
+   :last-move nil})
 
-(defn new-game-click [e]
-  (swap! app-state assoc :board (new-board 10)))
+(defonce app-state
+  (atom (merge (new-round :x)
+               {:scores {:x 0 :o 0}})))
 
-(defn display-winner [symbol]
-  (let [winning-player (->> active-users
-                            (filter #(= (:symbol %) symbol))
-                            (first)
-                            (:name))]
-    (when (not (nil? winning-player)) (when (js/confirm (str winning-player " has won. Do you want to restart?"))
-                                        (new-game-click nil)))))
+(defn play [state pos]
+  (if (or (:winner state) (contains? (:cells state) pos))
+    state
+    (let [player (:turn state)
+          cells (assoc (:cells state) pos player)
+          line (winning-line cells pos)]
+      (cond-> (assoc state
+                     :cells cells
+                     :last-move pos
+                     :turn (get-in players [player :next]))
+        line (-> (assoc :winner {:player player :line line})
+                 (update-in [:scores player] inc))))))
 
+(defn next-round [state]
+  ;; Players take turns starting, so neither always has the first move.
+  (merge state (new-round (get-in players [(:starter state) :next]))))
 
-  (defn check-solution [i j]
-    (let [board (get-in @app-state [:board])
-          valids-nr 5
-          valid? (fn [arr] (let
-                            [groups (partition-by identity arr)
-                             filtered-groups (filter #(and (>= (count %) valids-nr)
-                                                           (not= (first %) "B")) groups)]
-                             (if (> (count filtered-groups) 0) (first (first filtered-groups)) nil)))
-          horrizontal (vec (for [x (map #(+ (- i (dec valids-nr)) %) (range (dec (* 2 valids-nr))))
-                                 :when (<= 0 x (dec (count board)))]
-                             (get-in board [j x])))
-          vertical (vec (for [x (map #(+ (- j (dec valids-nr)) %) (range (dec (* 2 valids-nr))))
-                              :when (<= 0 x (dec (count board)))]
-                          (get-in board [x i])))
-          left-diagonal (vec (for [x (map #(+ (- (dec valids-nr)) %) (range (dec (* 2 valids-nr))))
-                                   :when (and (<= 0 (+ x j) (dec (count board)))
-                                              (<= 0 (+ x i) (dec (count board))))]
-                               (get-in board [(+ j x) (+ i x)])))
-          right-diagonal (vec (for [x (map #(+ (- (dec valids-nr)) %) (range (dec (* 2 valids-nr))))
-                                    :when (and (<= 0 (- j x) (dec (count board)))
-                                               (<= 0 (+ i x) (dec (count board))))]
-                                (get-in board [(- j x) (+ i x)])))]
-      (->> [horrizontal vertical left-diagonal right-diagonal]
-           (map valid?)
-           (remove nil?)
-           (first)
-           (display-winner))))
+(defn reset-scores [state]
+  (merge state (new-round :x) {:scores {:x 0 :o 0}}))
 
+;; ---------------------------------------------------------------------------
+;; View
 
-(defn blank [i j]
-  [:rect {:width 0.95
-          :height 0.95
-          :fill "gray"
-          :x i
-          :y j
-          :on-click (fn rect-click []
-                      (swap! app-state update-in [:current-player] #(mod (inc %) (count active-users)))
-                      (swap! app-state assoc-in [:current-state] (get-in active-users [(get-in @app-state [:current-player]) :symbol]))
-                      (swap! app-state assoc-in [:board j i] (get-in @app-state [:current-state]))
-                      (check-solution i j))}])
-
-
-(defn cross [i j]
-  [:g  {:stroke "black" :stroke-width 0.1
-        :stroke-linecap "round"
-        :transform
-        (str "translate(" (+ i 0.2) "," (+ 0.2 j) ") 
-                    scale(0.6)")}
+(defn cross [x y]
+  [:g {:class "mark mark--x"
+       :transform (str "translate(" (+ x 0.22) "," (+ y 0.22) ") scale(0.56)")}
    [:line {:x1 0 :y1 0 :x2 1 :y2 1}]
    [:line {:x1 1 :y1 0 :x2 0 :y2 1}]])
 
-(defn line [i j]
-  [:g  {:stroke "black" :stroke-width 0.1
-        :stroke-linecap "round"
-        :transform
-        (str "translate(" (+ i 0.2) "," (+ 0.2 j) ") 
-                    scale(0.6)")}
-   [:line {:x1 0 :y1 0 :x2 1 :y2 1}]
-   #_[:line {:x1 1 :y1 0 :x2 0 :y2 1}]])
+(defn nought [x y]
+  [:circle {:class "mark mark--o" :r 0.3 :cx (+ x 0.5) :cy (+ y 0.5)}])
 
+(defn cell [x y owner {:keys [last? winning? playable?]}]
+  [:g
+   [:rect {:class (str "cell"
+                       (when playable? " cell--playable")
+                       (when last? " cell--last")
+                       (when winning? " cell--win"))
+           :x (+ x 0.04) :y (+ y 0.04) :width 0.92 :height 0.92 :rx 0.12
+           :on-click (when playable? #(swap! app-state play [x y]))}]
+   (case owner
+     :x [cross x y]
+     :o [nought x y]
+     nil)])
 
-(defn circle [i j]
-  [:circle {:r 0.45
-            :fill "red"
-            :cx (+ i 0.5)
-            :cy (+ j 0.5)}])
+(defn win-stroke [line]
+  (let [[x1 y1] (first line)
+        [x2 y2] (last line)]
+    [:line {:class "win-line"
+            :x1 (+ x1 0.5) :y1 (+ y1 0.5)
+            :x2 (+ x2 0.5) :y2 (+ y2 0.5)}]))
 
+(defn board []
+  (let [{:keys [cells winner last-move]} @app-state
+        {:keys [min-x min-y max-x max-y]} (bounds cells)
+        width (inc (- max-x min-x))
+        height (inc (- max-y min-y))
+        winning (set (:line winner))]
+    [:svg.board {:view-box (str min-x " " min-y " " width " " height)
+                 :role "grid"
+                 :aria-label "Game board"}
+     (for [y (range min-y (inc max-y))
+           x (range min-x (inc max-x))
+           :let [pos [x y]
+                 owner (get cells pos)]]
+       ^{:key (str x "," y)}
+       [cell x y owner {:last? (= pos last-move)
+                        :winning? (contains? winning pos)
+                        :playable? (and (nil? owner) (nil? winner))}])
+     (when winner
+       [win-stroke (:line winner)])]))
 
+(defn symbol-badge [player]
+  [:span {:class (str "badge badge--" (name player))} (get-in players [player :name])])
 
+(defn status []
+  (let [{:keys [turn winner]} @app-state]
+    [:p.status
+     (if winner
+       [:<> [symbol-badge (:player winner)] " wins with five in a row!"]
+       [:<> [symbol-badge turn] "'s turn"])]))
+
+(defn scoreboard []
+  (let [{:keys [scores]} @app-state]
+    [:div.scores
+     [:span [symbol-badge :x] " " (:x scores)]
+     [:span.scores__sep "–"]
+     [:span (:o scores) " " [symbol-badge :o]]]))
 
 (defn infinitexo []
-  [:center
-   [:h1 (:text @app-state)]
-   (let [n 10]
-     [:svg
-      {:view-box [0 0 n n]
-       :width 400
-       :height 400}
-      (for [i (range n)
-            j (range n)] ;;[0 1 2 3 4] [0 1 2 3 4]
-        ^{:key (+ (* i n) j)}
-        (case (get-in @app-state [:board j i])
-          "B" [blank i j]
-          "X" [cross i j]
-          "I" [line i j]
-          "O" [circle i j]))])
-   [:p [:button {:on-click new-game-click} "New Game"]]])
+  (let [{:keys [winner]} @app-state]
+    [:main.game
+     [:h1 "Infinite XO"]
+     [:p.rules "Get " win-length " in a row. The board grows as you play near its edges."]
+     [scoreboard]
+     [status]
+     [board]
+     [:div.actions
+      [:button.btn.btn--primary {:on-click #(swap! app-state next-round)}
+       (if winner "Play again" "New game")]
+      [:button.btn {:on-click #(swap! app-state reset-scores)} "Reset scores"]]]))
 
-(rd/render [infinitexo]
-           (. js/document (getElementById "app")))
+(defn mount []
+  (rd/render [infinitexo] (.getElementById js/document "app")))
+
+(mount)
 
 (defn on-js-reload []
-  ;; optionally touch your app-state to force rerendering depending on
-  ;; your application
-  ;; (swap! app-state update-in [:__figwheel_counter] inc)
-  )
+  (mount))
